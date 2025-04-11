@@ -4,6 +4,7 @@ using ScheduleOne.DevUtilities;
 using ScheduleOne.Money;
 using ScheduleOne.PlayerScripts;
 using ScheduleOne.Product;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -115,6 +116,29 @@ namespace SilkRoad
 
         public void LoadQuests()
         {
+
+            foreach (var def in ProductManager.Instance.AllProducts)
+            {
+                if (def != null)
+                {
+                    MelonLogger.Msg($"🧪 Product: name={def.name}, type={def.GetType().Name}");
+
+                    var idField = def.GetType().GetField("id", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (idField != null)
+                    {
+                        var val = idField.GetValue(def);
+                        MelonLogger.Msg($"    -> id field: {val}");
+                    }
+
+                    var keyField = def.GetType().GetField("NameKey", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    if (keyField != null)
+                    {
+                        var val = keyField.GetValue(def);
+                        MelonLogger.Msg($"    -> NameKey field: {val}");
+                    }
+                }
+            }
+
             MelonLogger.Msg("🧠 LoadQuests() called.");
 
             quests.Clear();
@@ -122,62 +146,140 @@ namespace SilkRoad
             quests.Add(new QuestData
             {
                 Title = "OGKush Delivery",
-                Task = "Bring 10x OGKush to the green tent",
+                Task = "Bring 10x OG Kush to the green tent",
                 Reward = 1000,
-                ProductID = "OGKUSH",
+                ProductID = "OG Kush", // ✅ Must match ProductDefinition.name
                 AmountRequired = 10,
-                TargetObjectName = "HardwareStoreBack"
+                TargetObjectName = "GreenTent"
+            });
+            quests.Add(new QuestData
+            {
+                Title = "Green Crack Delivery",
+                Task = "Bring 10x Green Crack to the green tent",
+                Reward = 1000,
+                ProductID = "Green Crack", // ✅ Must match ProductDefinition.name
+                AmountRequired = 10,
+                TargetObjectName = "GreenTent"
             });
 
             MelonLogger.Msg($"📦 Loaded {quests.Count} quest(s).");
 
             RefreshQuestList();
         }
+        public Sprite GetProductIcon(string productName)
+        {
+            foreach (var product in ProductManager.Instance.AllProducts)
+            {
+                if (product == null || !product.name.Equals(productName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Try to dynamically generate icons
+                Sprite generated = ProductIconManager.Instance.GenerateIcons(product.name);
+                if (generated != null)
+                {
+                    MelonLogger.Msg($"🛠️ Generated icon for {product.name}.");
+                    return generated;
+                }
+
+                // Fallback: Try ValidPackaging
+                if (product.ValidPackaging != null)
+                {
+                    foreach (var packaging in product.ValidPackaging)
+                    {
+                        if (packaging == null) continue;
+
+                        string packagingID = packaging.name;
+
+                        Sprite icon = ProductIconManager.Instance.GetIcon(product.name, packagingID, true);
+                        if (icon != null)
+                        {
+                            MelonLogger.Msg($"✅ Found icon for {product.name} with packaging '{packagingID}'");
+                            return icon;
+                        }
+                        else
+                        {
+                            MelonLogger.Warning($"⚠️ No icon for {product.name} with packaging '{packagingID}'");
+                        }
+                    }
+                }
+
+                MelonLogger.Warning($"⚠️ Product '{product.name}' has no valid icon or packaging.");
+            }
+
+            MelonLogger.Error($"❌ Product not found or no valid icon for: {productName}");
+            return null;
+        }
+
 
         private void RefreshQuestList()
         {
             MelonLogger.Msg("🔁 Refreshing quest list...");
 
-            // Clear old entries
             foreach (Transform child in questListContainer)
                 GameObject.Destroy(child.gameObject);
-
-            // Load icon from disk
-            Texture2D iconTex = LoadCustomImage("WeaponsIcon.png");
-            Sprite iconSprite = null;
-
-            if (iconTex != null)
-            {
-                iconSprite = Sprite.Create(iconTex, new Rect(0f, 0f, iconTex.width, iconTex.height), new Vector2(0.5f, 0.5f));
-                MelonLogger.Msg("🖼️ Loaded icon from file: WeaponsIcon.png");
-            }
-            else
-            {
-                MelonLogger.Warning("⚠️ Could not load WeaponsIcon.png from disk.");
-            }
 
             foreach (var quest in quests)
             {
                 MelonLogger.Msg($"🆕 Creating icon for quest: {quest.Title}");
 
-                // Icon container
+                ProductDefinition product = null;
+
+                foreach (var def in ProductManager.Instance.AllProducts)
+                {
+                    if (def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase))
+                    {
+                        product = def;
+                        break;
+                    }
+                }
+
+                if (product == null)
+                {
+                    MelonLogger.Warning($"❌ Product not found: {quest.ProductID}");
+                    continue;
+                }
+
+                Sprite iconSprite = product.Icon;
+
+                if (iconSprite == null)
+                {
+                    MelonLogger.Warning($"⚠️ No icon found for product {product.name}");
+                    continue;
+                }
+
+                // Create outer container with horizontal layout
+                GameObject row = new GameObject("QuestRow_" + quest.Title, typeof(RectTransform));
+                row.transform.SetParent(questListContainer, false);
+                RectTransform rowRT = row.GetComponent<RectTransform>();
+                rowRT.sizeDelta = new Vector2(400f, 90f);
+
+                HorizontalLayoutGroup hLayout = row.AddComponent<HorizontalLayoutGroup>();
+                hLayout.spacing = 10;
+                hLayout.padding = new RectOffset(50, 10, 5, 5); // ⬅️ 25px left padding
+                hLayout.childAlignment = TextAnchor.MiddleLeft;
+                hLayout.childForceExpandHeight = false;
+                hLayout.childForceExpandWidth = false;
+
+                LayoutElement rowLE = row.AddComponent<LayoutElement>();
+                rowLE.preferredHeight = 90f;
+                rowLE.minHeight = 90f;
+
+                // ICON (your original code unchanged)
                 GameObject iconGO = new GameObject("QuestIcon_" + quest.Title);
-                iconGO.transform.SetParent(questListContainer, false);
+                iconGO.transform.SetParent(row.transform, false);
                 RectTransform rt = iconGO.AddComponent<RectTransform>();
                 rt.sizeDelta = new Vector2(90f, 90f);
 
-                // Background
                 Image bg = iconGO.AddComponent<Image>();
                 bg.color = new Color(0.15f, 0.15f, 0.15f);
                 bg.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Background.psd");
                 bg.type = Image.Type.Sliced;
 
-                // Add LayoutElement to help vertical layout
                 LayoutElement le = iconGO.AddComponent<LayoutElement>();
                 le.preferredHeight = 90f;
                 le.minHeight = 90f;
+                le.preferredWidth = 90f;
 
-                // Actual icon image
                 GameObject icon = new GameObject("Icon", typeof(RectTransform), typeof(Image));
                 icon.transform.SetParent(iconGO.transform, false);
                 RectTransform iconRT = icon.GetComponent<RectTransform>();
@@ -189,26 +291,48 @@ namespace SilkRoad
                 Image iconImage = icon.GetComponent<Image>();
                 iconImage.sprite = iconSprite;
                 iconImage.preserveAspect = true;
-                iconImage.color = Color.white; // Change to Color.green for debugging if needed
+                iconImage.color = Color.white;
 
-                // Add soft white outline around icon
                 Outline outline = icon.AddComponent<Outline>();
                 outline.effectColor = new Color(1f, 1f, 1f, 0.15f);
                 outline.effectDistance = new Vector2(1.5f, -1.5f);
 
-                // Optional: Add green border to the button container itself for debug
-                Outline border = iconGO.AddComponent<Outline>();
-                border.effectColor = new Color(0f, 1f, 0f, 0.5f);
-                border.effectDistance = new Vector2(2f, -2f);
-
-                // Clickable button
                 Button btn = iconGO.AddComponent<Button>();
-                btn.targetGraphic = bg; // FIXED: must be the background, not the icon!
+                btn.targetGraphic = bg;
                 btn.onClick.AddListener(() => OnSelectQuest(quest));
+
+                // TEXT panel
+                GameObject textPanel = new GameObject("QuestText", typeof(RectTransform));
+                textPanel.transform.SetParent(row.transform, false);
+                RectTransform textRT = textPanel.GetComponent<RectTransform>();
+                textRT.sizeDelta = new Vector2(280f, 90f);
+
+                VerticalLayoutGroup vLayout = textPanel.AddComponent<VerticalLayoutGroup>();
+                vLayout.spacing = 4;
+                vLayout.childAlignment = TextAnchor.MiddleLeft;
+                vLayout.childControlHeight = true;
+                vLayout.childControlWidth = true;
+                vLayout.childForceExpandWidth = false;
+
+                LayoutElement textLE = textPanel.AddComponent<LayoutElement>();
+                textLE.minWidth = 200f;
+                textLE.flexibleWidth = 1;
+
+                // Quest Title
+                Text titleText = UIFactory.Text("QuestTitle", quest.Title, textPanel.transform, 16, TextAnchor.MiddleLeft, FontStyle.Bold);
+
+                // Mafia Label
+                string mafiaLabel = "Client: Unknown";
+                if (product is WeedDefinition) mafiaLabel = "Client: German Mafia";
+                else if (product is CocaineDefinition) mafiaLabel = "Client: Canadian Mafia";
+                else if (product is MethDefinition) mafiaLabel = "Client: Russian Mafia";
+
+                Text clientText = UIFactory.Text("QuestClient", mafiaLabel, textPanel.transform, 14, TextAnchor.UpperLeft);
             }
 
-            MelonLogger.Msg($"✅ Displayed {quests.Count} quests using custom shipment icon.");
+            MelonLogger.Msg($"✅ Displayed {quests.Count} quests using in-game product icons.");
         }
+
 
 
         private Texture2D LoadCustomImage(string fileName)
@@ -236,6 +360,30 @@ namespace SilkRoad
             questReward.text = $"Reward: ${quest.Reward}";
             questHeat.text = "Heat: Low";
 
+            // Default label
+            string buttonLabel = "Accept Delivery";
+
+            // Try to find the product type for dynamic button label
+            foreach (var def in ProductManager.Instance.AllProducts)
+            {
+                if (def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase))
+                {
+                    string typeName = def.GetType().Name;
+                    if (typeName.Contains("Weed"))
+                        buttonLabel = "Deliver for German Mafia";
+                    else if (typeName.Contains("Cocaine"))
+                        buttonLabel = "Deliver for Canadian Mafia";
+                    else if (typeName.Contains("Meth"))
+                        buttonLabel = "Deliver for Russian Mafia";
+
+                    break;
+                }
+            }
+
+            // Update the button text
+            acceptButton.GetComponentInChildren<Text>().text = buttonLabel;
+
+            // Setup button actions
             acceptButton.onClick.RemoveAllListeners();
             acceptButton.onClick.AddListener(() => AcceptQuest(quest));
 
