@@ -121,7 +121,6 @@ namespace SilkRoad
             {
                 if (def != null)
                 {
-                    MelonLogger.Msg($"🧪 Product: name={def.name}, type={def.GetType().Name}");
 
                     var idField = def.GetType().GetField("id", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                     if (idField != null)
@@ -389,25 +388,57 @@ namespace SilkRoad
 
             mapButton.onClick.RemoveAllListeners();
             mapButton.onClick.AddListener(() => ShowQuestTarget(quest));
+            
         }
+
 
 
         private void AcceptQuest(QuestData quest)
         {
+            MelonLogger.Msg($"🚀 AcceptQuest called for: {quest.Title}");
+
             if (activeQuest != null)
             {
                 MelonLogger.Warning("⚠️ You already have an active delivery.");
                 return;
             }
 
+            ProductDefinition product = null;
+            foreach (var def in ProductManager.Instance.AllProducts)
+            {
+                if (def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase))
+                {
+                    product = def;
+                    break;
+                }
+            }
+
+            if (product == null)
+            {
+                MelonLogger.Warning($"❌ Cannot start quest — product not found: {quest.ProductID}");
+                return;
+            }
+
+            // Spawn quest GameObject
+            GameObject questGO = new GameObject("DeliveryQuest_" + quest.ProductID);
+            QuestDelivery questDelivery = questGO.AddComponent<QuestDelivery>();
+            questDelivery.Init(product, (int)quest.AmountRequired, quest.Reward);
+
             activeQuest = quest;
-            MelonLogger.Msg($"📦 Accepted quest: {quest.Title}");
 
-            if (deliveryCoroutine != null)
-                StopCoroutine(deliveryCoroutine);
+            // ✅ Reset activeQuest when the quest ends
+            questDelivery.onComplete.AddListener(() =>
+            {
+                MelonLogger.Msg("✅ Quest marked as complete. Resetting activeQuest.");
+                activeQuest = null;
 
-            deliveryCoroutine = StartCoroutine(CheckDelivery(quest));
+                // Optional: destroy the quest GameObject
+                GameObject.Destroy(questGO);
+            });
+
+            MelonLogger.Msg($"📦 Delivery quest started: {quest.Title}");
         }
+
 
         private void ShowQuestTarget(QuestData quest)
         {
