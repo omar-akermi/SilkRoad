@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using ScheduleOne.UI.Phone;
 using ScheduleOne.DevUtilities;
 using ScheduleOne.UI.Phone.ProductManagerApp;
+using ScheduleOne.Product;
 
 [assembly: MelonInfo(typeof(SilkRoad.Plugin), "SilkRoad", "1.0.0", "Nourchene")]
 [assembly: MelonGame("TVGS", "Schedule I")]

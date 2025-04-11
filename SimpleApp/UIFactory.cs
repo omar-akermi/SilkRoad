@@ -51,16 +51,32 @@ public static class UIFactory
 
     public static GameObject Button(string name, string label, Transform parent, Color color)
     {
-        GameObject btnGO = Panel(name, parent, color);
-        var btn = btnGO.AddComponent<Button>();
-        var txt = Text(name + "_Label", label, btnGO.transform, 18, TextAnchor.MiddleCenter, FontStyle.Bold);
+        GameObject buttonGO = new GameObject(name);
+        buttonGO.transform.SetParent(parent, false);
+        RectTransform rect = buttonGO.AddComponent<RectTransform>();
+        rect.sizeDelta = new Vector2(0, 40);
+
+        Image img = buttonGO.AddComponent<Image>();
+        img.color = color;
+
+        Button btn = buttonGO.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        // Text
+        GameObject textGO = new GameObject("Text");
+        textGO.transform.SetParent(buttonGO.transform, false);
+        Text txt = textGO.AddComponent<Text>();
+        txt.text = label;
+        txt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        txt.fontSize = 18;
         txt.alignment = TextAnchor.MiddleCenter;
+        txt.color = Color.white;
+        txt.rectTransform.anchorMin = Vector2.zero;
+        txt.rectTransform.anchorMax = Vector2.one;
+        txt.rectTransform.offsetMin = Vector2.zero;
+        txt.rectTransform.offsetMax = Vector2.zero;
 
-        var colors = btn.colors;
-        colors.highlightedColor = color * 1.2f;
-        btn.colors = colors;
-
-        return btnGO;
+        return buttonGO;
     }
 
     public static RectTransform ScrollableVerticalList(string name, Transform parent, out VerticalLayoutGroup layoutGroup)

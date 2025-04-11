@@ -30,7 +30,11 @@ namespace SilkRoad
             base.OnStartClient(IsOwner);
 
             ui = gameObject.AddComponent<SilkRoadAppUI>();
+
             ui.BuildUI(appContainer);
+            ui.LoadQuests();
+
+
         }
     }
 }
