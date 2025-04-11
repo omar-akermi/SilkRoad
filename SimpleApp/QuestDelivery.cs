@@ -14,7 +14,7 @@ using MelonLoader;
 
 namespace SilkRoad
 {
-    public class QuestDelivery : Contract
+    public class QuestDelivery : Quest
     {
         private DeadDrop deliverDrop;
         private DeadDrop rewardDrop;
@@ -41,7 +41,6 @@ namespace SilkRoad
 
         public void Init(ProductDefinition productDef, int amount, int reward)
         {
-
             this.product = productDef;
             this.amount = amount;
             this.reward = reward;
@@ -74,7 +73,7 @@ namespace SilkRoad
             }
             Entries.Add(deliveryEntry);
             Entries.Add(rewardEntry);
-            
+
         }
 
         private void HandleDelivery()
@@ -131,6 +130,8 @@ namespace SilkRoad
                 MelonLogger.Msg("💰 Inserted $" + reward + " into reward stash.");
                 MelonLogger.Msg("🏁 Reward collected. Quest complete!");
                 Complete(); // ✅ mark quest as complete
+                Destroy(gameObject);
+
             }
         }
 

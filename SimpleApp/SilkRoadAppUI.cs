@@ -116,55 +116,34 @@ namespace SilkRoad
 
         public void LoadQuests()
         {
+            MelonLogger.Msg("🧠 LoadQuests() with random dynamic products");
+
+            quests.Clear();
+            System.Random rng = new System.Random();
 
             foreach (var def in ProductManager.Instance.AllProducts)
             {
-                if (def != null)
+                if (def == null || string.IsNullOrWhiteSpace(def.name) || def.Price <= 0f)
+                    continue;
+
+                int bricks = rng.Next(1, 10); // Between 10 and 80 bricks
+                int reward = Mathf.RoundToInt(def.Price * 20f * bricks);
+
+                quests.Add(new QuestData
                 {
-
-                    var idField = def.GetType().GetField("id", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (idField != null)
-                    {
-                        var val = idField.GetValue(def);
-                        MelonLogger.Msg($"    -> id field: {val}");
-                    }
-
-                    var keyField = def.GetType().GetField("NameKey", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    if (keyField != null)
-                    {
-                        var val = keyField.GetValue(def);
-                        MelonLogger.Msg($"    -> NameKey field: {val}");
-                    }
-                }
+                    Title = $"{def.Name} Delivery",
+                    Task = $"Deliver {bricks}x {def.Name} Bricks to the stash.",
+                    Reward = reward,
+                    ProductID = def.name,
+                    AmountRequired = (uint)bricks,
+                    TargetObjectName = "GreenTent"
+                });
             }
 
-            MelonLogger.Msg("🧠 LoadQuests() called.");
-
-            quests.Clear();
-
-            quests.Add(new QuestData
-            {
-                Title = "OGKush Delivery",
-                Task = "Bring 10x OG Kush to the green tent",
-                Reward = 1000,
-                ProductID = "OG Kush", // ✅ Must match ProductDefinition.name
-                AmountRequired = 10,
-                TargetObjectName = "GreenTent"
-            });
-            quests.Add(new QuestData
-            {
-                Title = "Green Crack Delivery",
-                Task = "Bring 10x Green Crack to the green tent",
-                Reward = 1000,
-                ProductID = "Green Crack", // ✅ Must match ProductDefinition.name
-                AmountRequired = 10,
-                TargetObjectName = "GreenTent"
-            });
-
-            MelonLogger.Msg($"📦 Loaded {quests.Count} quest(s).");
-
+            MelonLogger.Msg($"📦 Generated {quests.Count} randomized quests.");
             RefreshQuestList();
         }
+
         public Sprite GetProductIcon(string productName)
         {
             foreach (var product in ProductManager.Instance.AllProducts)
