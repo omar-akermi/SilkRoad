@@ -2,12 +2,15 @@
 using MelonLoader.Utils;
 using ScheduleOne.DevUtilities;
 using ScheduleOne.Money;
+using ScheduleOne.NPCs;
 using ScheduleOne.PlayerScripts;
 using ScheduleOne.Product;
+using ScheduleOne.Quests;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -127,7 +130,7 @@ namespace SilkRoad
                     continue;
 
                 int bricks = rng.Next(1, 10); // Between 10 and 80 bricks
-                int reward = Mathf.RoundToInt(def.Price * 20f * bricks);
+                int reward = Mathf.RoundToInt(def.Price * 25f * bricks)+ 10000;
 
                 quests.Add(new QuestData
                 {
@@ -405,15 +408,31 @@ namespace SilkRoad
 
             activeQuest = quest;
 
-            // ✅ Reset activeQuest when the quest ends
+            // ✅ Add to active quests and contracts
+            if (!Quest.ActiveQuests.Contains(questDelivery))
+            {
+                Quest.ActiveQuests.Add(questDelivery);
+                MelonLogger.Msg("📝 Added to Quest.ActiveQuests and Player.Contracts");
+            }
+
+            // ✅ Hook on completion
             questDelivery.onComplete.AddListener(() =>
             {
                 MelonLogger.Msg("✅ Quest marked as complete. Resetting activeQuest.");
                 activeQuest = null;
-
-                // Optional: destroy the quest GameObject
                 GameObject.Destroy(questGO);
             });
+
+            // ✅ Send message from Blackmarket Buyer NPC
+            var npc = GameObject.FindObjectsOfType<ModdedNPC>().FirstOrDefault(n => n.ID == "npc_blackmarket_buyer");
+            if (npc != null)
+            {
+                npc.SendTextMessage($"Yo, I’m expecting {quest.AmountRequired}x bricks of {product.Name}. Drop it off at the usual stash. Reward: ${quest.Reward}.");
+            }
+            else
+            {
+                MelonLogger.Warning("⚠️ Blackmarket Buyer NPC not found. No message sent.");
+            }
 
             MelonLogger.Msg($"📦 Delivery quest started: {quest.Title}");
         }

@@ -7,7 +7,7 @@ using ScheduleOne.UI.Phone;
 using ScheduleOne.DevUtilities;
 using ScheduleOne.UI.Phone.ProductManagerApp;
 using ScheduleOne.Product;
-
+using HarmonyLib;
 [assembly: MelonInfo(typeof(SilkRoad.Plugin), "SilkRoad", "1.0.0", "Nourchene")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
@@ -18,9 +18,22 @@ namespace SilkRoad
         public override void OnInitializeMelon()
         {
             MelonLogger.Msg("🚚 Silk Road mod loaded!");
-
+            HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.silkroad.npc");
+            harmony.PatchAll(typeof(SilkRoad.BlackmarketNPCLoader).Assembly);
             MelonCoroutines.Start(InitSilkRoadApp());
         }
+        public override void OnSceneWasInitialized(int buildIndex, string sceneName)
+        {
+            if (sceneName != "Main") return;
+
+            MelonLogger.Msg("📦 Spawning Blackmarket Buyer NPC...");
+
+            GameObject npcGO = new GameObject("Blackmarket Buyer");
+            npcGO.AddComponent<SilkRoad.BlackmarketBuyer>();
+            GameObject.DontDestroyOnLoad(npcGO);
+        }
+
+        
 
         private IEnumerator InitSilkRoadApp()
         {

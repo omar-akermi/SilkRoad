@@ -11,6 +11,10 @@ using ScheduleOne.Quests;
 using UnityEngine.UI;
 using System;
 using MelonLoader;
+using ScheduleOne.GameTime;
+using Harmony;
+using ScheduleOne.Map;
+using ScheduleOne.UI;
 
 namespace SilkRoad
 {
@@ -25,62 +29,115 @@ namespace SilkRoad
         private int amount;
         private int reward;
         private bool deliveryCompleted = false; // ✅ flag to track delivery status
+        public UnityEvent onActiveState = new UnityEvent();
+        public UnityEvent onComplete = new UnityEvent();
+        public UnityEvent onInitialComplete = new UnityEvent();
+        public UnityEvent onQuestBegin = new UnityEvent();
+        public UnityEvent<EQuestState> onQuestEnd = new UnityEvent<EQuestState>();
+        public UnityEvent<bool> onTrackChange = new UnityEvent<bool>();
 
-        public QuestDelivery()
-        {
-            onActiveState = new UnityEvent();
-            onComplete = new UnityEvent();
-            onInitialComplete = new UnityEvent();
-            onQuestBegin = new UnityEvent();
-            onQuestEnd = new UnityEvent<EQuestState>();
-            onTrackChange = new UnityEvent<bool>();
+        public bool TrackOnBegin = true;
+        public bool AutoCompleteOnAllEntriesComplete = true;
 
-            TrackOnBegin = true;
-            AutoCompleteOnAllEntriesComplete = true;
-        }
 
         public void Init(ProductDefinition productDef, int amount, int reward)
         {
             this.product = productDef;
             this.amount = amount;
             this.reward = reward;
+            this.autoInitialize = false;
+            this.IsTracked = true;
+            this.title = $"{productDef.Name} Delivery";
+            this.Description = $"Deliver {amount}x {productDef.Name} bricks to the stash.";
+            this.Expires = true;
 
-            title = $"{productDef.Name} Delivery";
-            Description = $"Deliver {amount}x {productDef.Name} to the stash.";
+            // Set expiry: 2 in-game days
+            GameDateTime expiry = NetworkSingleton<TimeManager>.Instance.GetDateTime().AddMins(2880);
+            this.ConfigureExpiry(true, expiry);
 
-            deliverDrop = DeadDrop.DeadDrops[5]; // Or random like in BulkOrder
+            // Pick dead drops
+            deliverDrop = DeadDrop.DeadDrops[5];
             rewardDrop = DeadDrop.DeadDrops[5];
 
+            // Listen for interactions
             deliverDrop.Storage.onClosed.AddListener(HandleDelivery);
             rewardDrop.Storage.onOpened.AddListener(HandleReward);
 
+            // Setup icon + POI
+            this.IconPrefab = CreateIconPrefab().GetComponent<RectTransform>();
+            this.PoIPrefab = CreatePoIPrefab();
+
+            // Delivery Quest Entry
             GameObject deliverGO = new GameObject("DeliveryEntry");
             deliverGO.transform.SetParent(transform);
             deliveryEntry = deliverGO.AddComponent<QuestEntry>();
             deliveryEntry.SetEntryTitle($"Deliver {amount}x {productDef.Name}");
             deliveryEntry.PoILocation = deliverDrop.transform;
 
+            // Reward Quest Entry
             GameObject rewardGO = new GameObject("RewardEntry");
             rewardGO.transform.SetParent(transform);
             rewardEntry = rewardGO.AddComponent<QuestEntry>();
             rewardEntry.SetEntryTitle($"Collect ${reward} reward");
             rewardEntry.PoILocation = rewardDrop.transform;
-            // ✅ Add to ActiveQuests
-            if (!Quest.ActiveQuests.Contains(this))
-            {
-                Quest.ActiveQuests.Add(this);
-                MelonLogger.Msg("📝 Added to Quest.ActiveQuests");
-            }
+            Quest.Quests.Add(this);
+            Quest.ActiveQuests.Add(this);
             Entries.Add(deliveryEntry);
             Entries.Add(rewardEntry);
 
+            // ✅ Now safe to init quest data
+            string guid = Guid.NewGuid().ToString();
+            this.InitializeQuest(title, Description, Entries.Select(e => e.GetSaveData()).ToArray(), guid);
+
+            // ✅ Begin quest (triggers HUD + lifecycle)
+            this.Begin(true);
         }
 
+        private GameObject CreateIconPrefab()
+        {
+            GameObject icon = new GameObject("IconPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            icon.transform.SetParent(transform);
+            Image img = icon.GetComponent<Image>();
+            img.sprite = PlayerSingleton<ScheduleOne.UI.Phone.ContactsApp.ContactsApp>.Instance.AppIcon;
+            return icon;
+        }
+
+        private GameObject CreatePoIPrefab()
+        {
+            GameObject poiGO = new GameObject("POIPrefab");
+            poiGO.transform.SetParent(transform);
+
+            POI poi = poiGO.AddComponent<POI>();
+            poi.DefaultMainText = "Blackmarket Request";
+
+            var field = HarmonyLib.AccessTools.Field(typeof(POI), "UIPrefab");
+            field.SetValue(poi, CreatePoIUIPrefab());
+
+            return poiGO;
+        }
+
+        private GameObject CreatePoIUIPrefab()
+        {
+            GameObject poiUI = new GameObject("PoIUIPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.EventSystems.EventTrigger), typeof(Button));
+            poiUI.transform.SetParent(transform);
+
+            GameObject label = new GameObject("MainLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            label.transform.SetParent(poiUI.transform);
+
+            GameObject icon = new GameObject("IconContainer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            icon.transform.SetParent(poiUI.transform);
+            icon.GetComponent<Image>().sprite = PlayerSingleton<ScheduleOne.UI.Phone.ContactsApp.ContactsApp>.Instance.AppIcon;
+
+            return poiUI;
+        }
         private void HandleDelivery()
         {
+            if (deliveryCompleted) return;
+
             MelonLogger.Msg("📥 HandleDelivery() triggered!");
 
-            if (deliverDrop == null || product == null) return;
+            if (deliverDrop == null || product == null)
+                return;
 
             List<ItemSlot> matchingSlots = deliverDrop.Storage.ItemSlots
                 .Where(slot => slot.ItemInstance != null && slot.ItemInstance.Definition.name == product.name)
@@ -103,15 +160,24 @@ namespace SilkRoad
             }
 
             MelonLogger.Msg($"✅ Delivered {amount}x {product.name}.");
-            deliveryCompleted = true; // ✅ mark delivery as complete
+            deliveryCompleted = true;
 
-            deliveryEntry?.Complete();
-            rewardEntry?.SetState(EQuestState.Active);
+            // ✅ Just like QuestBulkOrder — mark first step as complete
+            if (deliveryEntry != null)
+                deliveryEntry.Complete();
+
+            if (rewardEntry != null)
+                rewardEntry.SetState(EQuestState.Active, true); // true = show toast popup or highlight
+
+            // Optional: Notify NPC
+            // BlackmarketBuyer.Instance?.NotifyDelivery(product.name);
         }
 
 
         private void HandleReward()
         {
+            if (!deliveryCompleted) return;
+
             if (!deliveryCompleted)
             {
                 MelonLogger.Warning("⛔ Tried to collect reward before completing delivery.");
@@ -122,16 +188,22 @@ namespace SilkRoad
 
             CashInstance cash = (CashInstance)PlayerSingleton<PlayerInventory>.Instance.cashInstance.GetCopy();
             cash.SetBalance(reward);
+
             if (rewardDrop.Storage.CanItemFit(cash))
             {
                 rewardDrop.Storage.InsertItem(cash);
+                deliveryCompleted = true;
+
                 rewardEntry?.Complete();
+                deliveryEntry?.Complete(); // just in case
+                onComplete?.Invoke();
 
-                MelonLogger.Msg("💰 Inserted $" + reward + " into reward stash.");
+                MelonLogger.Msg($"💰 Inserted ${reward} into reward stash.");
                 MelonLogger.Msg("🏁 Reward collected. Quest complete!");
-                Complete(); // ✅ mark quest as complete
-                Destroy(gameObject);
 
+                Complete(); // ✅ properly ends quest
+                Quest.ActiveQuests.Remove(this);
+                Destroy(gameObject); // ✅ destroy to prevent reactivation
             }
         }
 
