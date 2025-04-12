@@ -102,7 +102,7 @@ namespace SilkRoad
             base.Awake();
         }
 
-        public override void Start()
+        protected virtual void Start()
         {
             base.Start();
         }

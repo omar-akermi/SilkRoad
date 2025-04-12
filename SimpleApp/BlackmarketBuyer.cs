@@ -8,25 +8,14 @@ using ScheduleOne.Quests;
 using ScheduleOne.PlayerScripts;
 using ScheduleOne.Variables;
 using ScheduleOne.UI.Phone.ContactsApp;
-using ScheduleOne.DevUtilities;
 using ScheduleOne.GameTime;
-using ScheduleOne.NPCs;
+using ScheduleOne.DevUtilities;
+
 
 namespace SilkRoad
 {
     public class BlackmarketBuyer : ModdedNPC
     {
-        public BlackmarketBuyer()
-        {
-            this.FirstName = "Blackmarket";
-            this.LastName = "Buyer";
-            this.ID = "npc_blackmarket_buyer"; // This is what you search by in AcceptQuest
-            this.MugshotSprite = PlayerSingleton<ContactsApp>.Instance.AppIcon;
-            this.ConversationCategories = new List<EConversationCategory> { 0 }; // 0 = general
-            NPCManager.NPCRegistry.Add(this);
-
-        }
-
         private bool _pendingOrder = false;
         private ProductDefinition _pendingProduct;
         private int _pendingAmount;
@@ -53,7 +42,12 @@ namespace SilkRoad
             "Shame. I thought you had it."
         };
 
-
+        public BlackmarketBuyer()
+        {
+            this.FirstName = "Blackmarket";
+            this.LastName = "Buyer";
+            this.ID = "npc_blackmarket_buyer";
+        }
 
         public override void Awake()
         {

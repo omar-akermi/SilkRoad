@@ -408,12 +408,6 @@ namespace SilkRoad
 
             activeQuest = quest;
 
-            // ✅ Add to active quests and contracts
-            if (!Quest.ActiveQuests.Contains(questDelivery))
-            {
-                Quest.ActiveQuests.Add(questDelivery);
-                MelonLogger.Msg("📝 Added to Quest.ActiveQuests and Player.Contracts");
-            }
 
             // ✅ Hook on completion
             questDelivery.onComplete.AddListener(() =>
@@ -424,9 +418,10 @@ namespace SilkRoad
             });
 
             // ✅ Send message from Blackmarket Buyer NPC
-            var npc = GameObject.FindObjectsOfType<ModdedNPC>().FirstOrDefault(n => n.ID == "npc_blackmarket_buyer");
+            var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
             if (npc != null)
             {
+                MelonLogger.Msg("📱 Found Blackmarket Buyer NPC, sending quest text...");
                 npc.SendTextMessage($"Yo, I’m expecting {quest.AmountRequired}x bricks of {product.Name}. Drop it off at the usual stash. Reward: ${quest.Reward}.");
             }
             else

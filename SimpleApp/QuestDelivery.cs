@@ -42,6 +42,9 @@ namespace SilkRoad
 
         public void Init(ProductDefinition productDef, int amount, int reward)
         {
+            MelonLogger.Msg("🚀 QuestDelivery.Init() called");
+            MelonLogger.Msg($"📦 Product: {productDef?.Name ?? "NULL"}, Amount: {amount}, Reward: ${reward}");
+
             this.product = productDef;
             this.amount = amount;
             this.reward = reward;
@@ -51,47 +54,80 @@ namespace SilkRoad
             this.Description = $"Deliver {amount}x {productDef.Name} bricks to the stash.";
             this.Expires = true;
 
-            // Set expiry: 2 in-game days
+            MelonLogger.Msg("⏳ Setting expiry (2 in-game days)");
             GameDateTime expiry = NetworkSingleton<TimeManager>.Instance.GetDateTime().AddMins(2880);
             this.ConfigureExpiry(true, expiry);
 
-            // Pick dead drops
+            // Dead drop targets
+            if (DeadDrop.DeadDrops == null || DeadDrop.DeadDrops.Count <= 5)
+            {
+                MelonLogger.Error("❌ DeadDrops list is missing or too short!");
+                return;
+            }
+
             deliverDrop = DeadDrop.DeadDrops[5];
             rewardDrop = DeadDrop.DeadDrops[5];
+            MelonLogger.Msg($"📍 Using drop point: {deliverDrop?.name}");
 
-            // Listen for interactions
+            // Hook delivery events
+            if (deliverDrop?.Storage == null || rewardDrop?.Storage == null)
+            {
+                MelonLogger.Error("❌ Drop storage is null!");
+                return;
+            }
+
             deliverDrop.Storage.onClosed.AddListener(HandleDelivery);
             rewardDrop.Storage.onOpened.AddListener(HandleReward);
+            MelonLogger.Msg("✅ Subscribed to drop storage events");
 
-            // Setup icon + POI
+            // Icon & POI
+            MelonLogger.Msg("🎨 Creating IconPrefab & PoIPrefab");
             this.IconPrefab = CreateIconPrefab().GetComponent<RectTransform>();
             this.PoIPrefab = CreatePoIPrefab();
 
-            // Delivery Quest Entry
+            // Delivery Entry
+            MelonLogger.Msg("📄 Creating delivery quest entry");
             GameObject deliverGO = new GameObject("DeliveryEntry");
             deliverGO.transform.SetParent(transform);
             deliveryEntry = deliverGO.AddComponent<QuestEntry>();
             deliveryEntry.SetEntryTitle($"Deliver {amount}x {productDef.Name}");
             deliveryEntry.PoILocation = deliverDrop.transform;
 
-            // Reward Quest Entry
+            // Reward Entry
+            MelonLogger.Msg("📄 Creating reward quest entry");
             GameObject rewardGO = new GameObject("RewardEntry");
             rewardGO.transform.SetParent(transform);
             rewardEntry = rewardGO.AddComponent<QuestEntry>();
             rewardEntry.SetEntryTitle($"Collect ${reward} reward");
             rewardEntry.PoILocation = rewardDrop.transform;
-            Quest.Quests.Add(this);
-            Quest.ActiveQuests.Add(this);
+
+            // Entries list
             Entries.Add(deliveryEntry);
             Entries.Add(rewardEntry);
+            MelonLogger.Msg("✅ Added entries to quest");
 
-            // ✅ Now safe to init quest data
-            string guid = Guid.NewGuid().ToString();
-            this.InitializeQuest(title, Description, Entries.Select(e => e.GetSaveData()).ToArray(), guid);
+            // Register quest
+            Quest.Quests.Add(this);
+            Quest.ActiveQuests.Add(this);
+            MelonLogger.Msg("📝 Registered quest in Quest lists");
 
-            // ✅ Begin quest (triggers HUD + lifecycle)
+            // Initialize data
+            try
+            {
+                string guid = Guid.NewGuid().ToString();
+                this.InitializeQuest(title, Description, Entries.Select(e => e.GetSaveData()).ToArray(), guid);
+                MelonLogger.Msg($"🧠 Initialized quest with GUID: {guid}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"❌ Failed to initialize quest: {ex.Message}");
+            }
+
+            // Start
             this.Begin(true);
+            MelonLogger.Msg("🔥 Quest.Begin(true) called");
         }
+
 
         private GameObject CreateIconPrefab()
         {
