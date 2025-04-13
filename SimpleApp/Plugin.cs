@@ -20,16 +20,15 @@ namespace SilkRoad
             MelonLogger.Msg("🚚 Silk Road mod loaded!");
             HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.silkroad.npc");
             harmony.PatchAll(typeof(SilkRoad.BlackmarketNPCLoader).Assembly);
-            MelonCoroutines.Start(InitSilkRoadApp());
         }
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
             if (sceneName != "Main") return;
+            MelonCoroutines.Start(InitSilkRoadApp());
 
             MelonLogger.Msg("📦 Spawning Blackmarket Buyer NPC...");
 
             GameObject npcGO = new GameObject("Blackmarket Buyer");
-            npcGO.AddComponent<SilkRoad.BlackmarketBuyer>();
             GameObject.DontDestroyOnLoad(npcGO);
         }
 

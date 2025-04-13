@@ -6,6 +6,7 @@ using ScheduleOne.NPCs;
 using ScheduleOne.PlayerScripts;
 using ScheduleOne.Product;
 using ScheduleOne.Quests;
+using ScheduleOne.UI.Phone;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -26,12 +27,12 @@ namespace SilkRoad
         public RectTransform questListContainer;
         public RectTransform questDetailPanel;
         public Button acceptButton;
-        public Button mapButton;
 
         public Text questTitle;
         public Text questTask;
         public Text questReward;
-        public Text questHeat;
+        private static QuestData lastActiveQuest;
+        public Text deliveryStatus; // declare at top
 
         public void BuildUI(Transform root)
         {
@@ -103,13 +104,12 @@ namespace SilkRoad
             questTitle = UIFactory.Text("QuestTitle", "Select a quest", rightPanel.transform, 22, TextAnchor.UpperLeft, FontStyle.Bold);
             questTask = UIFactory.Text("QuestTask", "Task: --", rightPanel.transform, 18);
             questReward = UIFactory.Text("QuestReward", "Reward: --", rightPanel.transform, 18);
-            questHeat = UIFactory.Text("QuestHeat", "Heat: --", rightPanel.transform, 18);
+            deliveryStatus = UIFactory.Text("DeliveryStatus", "", rightPanel.transform, 16, TextAnchor.UpperLeft);
 
             GameObject acceptGO = UIFactory.Button("AcceptButton", "Accept Delivery", rightPanel.transform, new Color(0.2f, 0.6f, 0.2f));
             acceptButton = acceptGO.GetComponent<Button>();
 
-            GameObject mapGO = UIFactory.Button("MapButton", "Show on Map", rightPanel.transform, new Color(0.2f, 0.5f, 0.8f));
-            mapButton = mapGO.GetComponent<Button>();
+
 
             MelonLogger.Msg("✅ Silk Road UI finished.");
 
@@ -119,18 +119,22 @@ namespace SilkRoad
 
         public void LoadQuests()
         {
-            MelonLogger.Msg("🧠 LoadQuests() with random dynamic products");
+            MelonLogger.Msg("🧠 LoadQuests() with 4 random products");
 
             quests.Clear();
             System.Random rng = new System.Random();
 
-            foreach (var def in ProductManager.Instance.AllProducts)
-            {
-                if (def == null || string.IsNullOrWhiteSpace(def.name) || def.Price <= 0f)
-                    continue;
+            // Shuffle and pick only 4 valid products
+            var shuffled = ProductManager.Instance.AllProducts
+                .Where(def => def != null && !string.IsNullOrWhiteSpace(def.name) && def.Price > 0f)
+                .OrderBy(_ => rng.Next())
+                .Take(4)
+                .ToList();
 
-                int bricks = rng.Next(1, 10); // Between 10 and 80 bricks
-                int reward = Mathf.RoundToInt(def.Price * 25f * bricks)+ 10000;
+            foreach (var def in shuffled)
+            {
+                int bricks = rng.Next(1, 10); // Between 1 and 9
+                int reward = Mathf.RoundToInt(def.Price * 25f * bricks) + 10000;
 
                 quests.Add(new QuestData
                 {
@@ -146,6 +150,7 @@ namespace SilkRoad
             MelonLogger.Msg($"📦 Generated {quests.Count} randomized quests.");
             RefreshQuestList();
         }
+
 
         public Sprite GetProductIcon(string productName)
         {
@@ -310,11 +315,24 @@ namespace SilkRoad
 
                 Text clientText = UIFactory.Text("QuestClient", mafiaLabel, textPanel.transform, 14, TextAnchor.UpperLeft);
             }
+            if (lastActiveQuest != null)
+            {
+                OnSelectQuest(lastActiveQuest);
+                UpdateUIStateForAcceptedQuest(); // this will also disable the button
+            }
 
             MelonLogger.Msg($"✅ Displayed {quests.Count} quests using in-game product icons.");
         }
 
 
+        private void UpdateUIStateForAcceptedQuest()
+        {
+            if (deliveryStatus != null)
+                deliveryStatus.text = "🚚 Delivery Active";
+
+            if (acceptButton != null)
+                acceptButton.interactable = false;
+        }
 
         private Texture2D LoadCustomImage(string fileName)
         {
@@ -330,7 +348,6 @@ namespace SilkRoad
 
 
 
-
         private void OnSelectQuest(QuestData quest)
         {
             selectedQuest = quest;
@@ -339,39 +356,27 @@ namespace SilkRoad
             questTitle.text = quest.Title;
             questTask.text = "Task: " + quest.Task;
             questReward.text = $"Reward: ${quest.Reward}";
-            questHeat.text = "Heat: Low";
 
-            // Default label
-            string buttonLabel = "Accept Delivery";
+            // Update Accept button text
+            acceptButton.GetComponentInChildren<Text>().text = "Accept Delivery";
 
-            // Try to find the product type for dynamic button label
-            foreach (var def in ProductManager.Instance.AllProducts)
+            acceptButton.onClick.RemoveAllListeners();
+
+            // ⛔ Prevent accepting new delivery if one is active
+            if (activeQuest != null)
             {
-                if (def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase))
-                {
-                    string typeName = def.GetType().Name;
-                    if (typeName.Contains("Weed"))
-                        buttonLabel = "Deliver for German Mafia";
-                    else if (typeName.Contains("Cocaine"))
-                        buttonLabel = "Deliver for Canadian Mafia";
-                    else if (typeName.Contains("Meth"))
-                        buttonLabel = "Deliver for Russian Mafia";
-
-                    break;
-                }
+                acceptButton.interactable = false;
+                MelonLogger.Msg("⛔ Accept disabled - active quest already running");
+            }
+            else
+            {
+                acceptButton.interactable = true;
+                acceptButton.onClick.AddListener(() => AcceptQuest(quest));
             }
 
-            // Update the button text
-            acceptButton.GetComponentInChildren<Text>().text = buttonLabel;
-
-            // Setup button actions
-            acceptButton.onClick.RemoveAllListeners();
-            acceptButton.onClick.AddListener(() => AcceptQuest(quest));
-
-            mapButton.onClick.RemoveAllListeners();
-            mapButton.onClick.AddListener(() => ShowQuestTarget(quest));
-            
         }
+
+
 
 
 
@@ -385,15 +390,8 @@ namespace SilkRoad
                 return;
             }
 
-            ProductDefinition product = null;
-            foreach (var def in ProductManager.Instance.AllProducts)
-            {
-                if (def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase))
-                {
-                    product = def;
-                    break;
-                }
-            }
+            ProductDefinition product = ProductManager.Instance.AllProducts
+                .FirstOrDefault(def => def != null && def.name.Equals(quest.ProductID, StringComparison.OrdinalIgnoreCase));
 
             if (product == null)
             {
@@ -407,6 +405,11 @@ namespace SilkRoad
             questDelivery.Init(product, (int)quest.AmountRequired, quest.Reward);
 
             activeQuest = quest;
+            lastActiveQuest = quest; // 💾 persist across UI reloads
+
+            // ✅ Update UI to reflect active quest
+            acceptButton.interactable = false;
+            acceptButton.GetComponentInChildren<Text>().text = "Delivery Active";
 
 
             // ✅ Hook on completion
@@ -415,7 +418,12 @@ namespace SilkRoad
                 MelonLogger.Msg("✅ Quest marked as complete. Resetting activeQuest.");
                 activeQuest = null;
                 GameObject.Destroy(questGO);
+
+                // ✅ Reset UI
+                acceptButton.interactable = true;
+                acceptButton.GetComponentInChildren<Text>().text = "Accept Delivery";
             });
+            acceptButton.interactable = false;
 
             // ✅ Send message from Blackmarket Buyer NPC
             var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
@@ -433,19 +441,7 @@ namespace SilkRoad
         }
 
 
-        private void ShowQuestTarget(QuestData quest)
-        {
-            var target = GameObject.Find(quest.TargetObjectName);
-            if (target != null)
-            {
-                MelonLogger.Msg($"📍 Target location for {quest.Title}: {target.transform.position}");
-                // You can add blinking effect or map marker here later
-            }
-            else
-            {
-                MelonLogger.Warning("⚠️ Target not found: " + quest.TargetObjectName);
-            }
-        }
+
 
         private Vector3 dropOffLocation = new Vector3(-18.9826f, -4.035f, 173.6407f);
 

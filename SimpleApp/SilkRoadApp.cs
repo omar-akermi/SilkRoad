@@ -16,8 +16,8 @@ namespace SilkRoad
         {
             if (!IsOwner) return;
 
-            AppName = "Silk Road";
-            IconLabel = "Silk";
+            AppName = "Silkroad";
+            IconLabel = "Silkroad";
             Orientation = EOrientation.Horizontal;
 
             var icon = Plugin.LoadImage("SilkRoadIcon.png");
