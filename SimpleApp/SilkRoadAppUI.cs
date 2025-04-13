@@ -134,7 +134,9 @@ namespace SilkRoad
             foreach (var def in shuffled)
             {
                 int bricks = rng.Next(1, 10); // Between 1 and 9
-                int reward = Mathf.RoundToInt(def.Price * 25f * bricks) + 10000;
+                int baseReward = Mathf.RoundToInt(def.Price * 25f * bricks);
+                int bonus = UnityEngine.Random.Range(100, 301) * bricks; // +100 to +300 per brick
+                int reward = baseReward + bonus;
 
                 quests.Add(new QuestData
                 {

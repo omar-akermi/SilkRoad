@@ -15,6 +15,7 @@ using ScheduleOne.GameTime;
 using Harmony;
 using ScheduleOne.Map;
 using ScheduleOne.UI;
+using System.Collections;
 
 namespace SilkRoad
 {
@@ -53,6 +54,7 @@ namespace SilkRoad
             this.title = $"{productDef.Name} Delivery";
             this.Description = $"Deliver {amount}x {productDef.Name} bricks to the stash.";
             this.Expires = true;
+            this.Subtitle = $"\n<color=#AAAAAA><size=12>{this.Description}</size></color>";
 
             MelonLogger.Msg("⏳ Setting expiry (2 in-game days)");
             GameDateTime expiry = NetworkSingleton<TimeManager>.Instance.GetDateTime().AddMins(2880);
@@ -81,10 +83,9 @@ namespace SilkRoad
             MelonLogger.Msg("✅ Subscribed to drop storage events");
 
             // Icon & POI
-            MelonLogger.Msg("🎨 Creating IconPrefab & PoIPrefab");
+            //MelonLogger.Msg("🎨 Creating IconPrefab & PoIPrefab");
             this.IconPrefab = CreateIconPrefab().GetComponent<RectTransform>();
             this.PoIPrefab = CreatePoIPrefab();
-
             // Delivery Entry
             MelonLogger.Msg("📄 Creating delivery quest entry");
             GameObject deliverGO = new GameObject("DeliveryEntry");
@@ -102,6 +103,7 @@ namespace SilkRoad
             rewardEntry.PoILocation = rewardDrop.transform;
 
             // Entries list
+            Entries.Clear(); // ⬅️ add this if not already there
             Entries.Add(deliveryEntry);
             Entries.Add(rewardEntry);
             MelonLogger.Msg("✅ Added entries to quest");
@@ -126,18 +128,23 @@ namespace SilkRoad
             // Start
             this.Begin(true);
             MelonLogger.Msg("🔥 Quest.Begin(true) called");
+
         }
 
 
-        private GameObject CreateIconPrefab()
-        {
-            GameObject icon = new GameObject("IconPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            icon.transform.SetParent(transform);
-            Image img = icon.GetComponent<Image>();
-            var iconn = Plugin.LoadImage("SilkRoadIcon.png");
-            img.sprite = iconn;
-            return icon;
-        }
+
+         private GameObject CreateIconPrefab()
+         {
+             GameObject icon = new GameObject("IconPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+             icon.transform.SetParent(transform);
+             Image img = icon.GetComponent<Image>();
+             var iconn = Plugin.LoadImage("SilkRoadIcon.png");
+             img.sprite = iconn;
+             return icon;
+
+         }
+
+
 
         private GameObject CreatePoIPrefab()
         {
@@ -202,6 +209,7 @@ namespace SilkRoad
             // ✅ Just like QuestBulkOrder — mark first step as complete
             if (deliveryEntry != null)
                 deliveryEntry.Complete();
+            this.Subtitle = $"\n<color=#AAAAAA><size=12>Reward ready: Collect ${reward} from the drop point.</size></color>";
 
             if (rewardEntry != null)
                 rewardEntry.SetState(EQuestState.Active, true); // true = show toast popup or highlight
@@ -240,6 +248,18 @@ namespace SilkRoad
 
                 Complete(); // ✅ properly ends quest
                 Quest.ActiveQuests.Remove(this);
+                // ✅ Destroy HUD if it exists
+                var huds = GameObject.FindObjectsOfType<ScheduleOne.UI.QuestHUDUI>();
+                foreach (var hud in huds)
+                {
+                    if (hud != null && hud.Quest == this)
+                    {
+                        GameObject.Destroy(hud.gameObject);
+                        MelonLogger.Msg("🗑️ Destroyed QuestHUD UI for completed quest.");
+                        break;
+                    }
+                }
+
                 Destroy(gameObject); // ✅ destroy to prevent reactivation
             }
         }
