@@ -134,7 +134,8 @@ namespace SilkRoad
             GameObject icon = new GameObject("IconPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             icon.transform.SetParent(transform);
             Image img = icon.GetComponent<Image>();
-            img.sprite = PlayerSingleton<ScheduleOne.UI.Phone.ContactsApp.ContactsApp>.Instance.AppIcon;
+            var iconn = Plugin.LoadImage("SilkRoadIcon.png");
+            img.sprite = iconn;
             return icon;
         }
 

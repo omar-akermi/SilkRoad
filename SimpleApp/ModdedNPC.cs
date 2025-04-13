@@ -30,7 +30,8 @@ namespace SilkRoad
             this.LastName = "NPC";
             this.ID = "custom_npc";
             this.BakedGUID = Guid.NewGuid().ToString();
-            this.MugshotSprite = PlayerSingleton<ContactsApp>.Instance.AppIcon;
+            var iconn = Plugin.LoadImage("SilkRoadIcon.png");
+            this.MugshotSprite = iconn;
             this.ConversationCategories = new List<EConversationCategory> { EConversationCategory.Customer };
         }
 

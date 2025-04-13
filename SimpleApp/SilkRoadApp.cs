@@ -11,7 +11,7 @@ namespace SilkRoad
     public class SilkRoadApp : App<SilkRoadApp>
     {
         private SilkRoadAppUI ui;
-
+        public Sprite iconn;
         public override void OnStartClient(bool IsOwner)
         {
             if (!IsOwner) return;
@@ -21,6 +21,7 @@ namespace SilkRoad
             Orientation = EOrientation.Horizontal;
 
             var icon = Plugin.LoadImage("SilkRoadIcon.png");
+            iconn = icon;
             if (icon != null)
             {
                 AppIcon = icon;

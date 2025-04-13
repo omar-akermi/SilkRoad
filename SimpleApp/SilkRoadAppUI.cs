@@ -422,15 +422,31 @@ namespace SilkRoad
                 // ✅ Reset UI
                 acceptButton.interactable = true;
                 acceptButton.GetComponentInChildren<Text>().text = "Accept Delivery";
+                deliveryStatus.text = ""; // Clear delivery active label
+
+                // ✅ Send final message from Blackmarket Buyer
+                var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
+                if (npc != null)
+                {
+                    MelonLogger.Msg("📱 Quest complete — sending final NPC message.");
+                    npc.SendTextMessage("Yo, got the package. Payment’s wired. Good job.");
+                }
+                else
+                {
+                    MelonLogger.Warning("⚠️ Blackmarket Buyer NPC not found. No final message sent.");
+                }
             });
+
             acceptButton.interactable = false;
 
             // ✅ Send message from Blackmarket Buyer NPC
             var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
             if (npc != null)
-            {
+            {        
                 MelonLogger.Msg("📱 Found Blackmarket Buyer NPC, sending quest text...");
-                npc.SendTextMessage($"Yo, I’m expecting {quest.AmountRequired}x bricks of {product.Name}. Drop it off at the usual stash. Reward: ${quest.Reward}.");
+                npc.SendTextMessage(
+                    $"Yo, I’m expecting <color=#FF0004>{quest.AmountRequired}x</color> bricks of <color=#34AD33>{product.Name}</color>. " +
+                    $"Drop it off at the Skatepark stash. Reward: <color=#C9C843>${quest.Reward}</color>.");
             }
             else
             {

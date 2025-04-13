@@ -8,7 +8,7 @@ using ScheduleOne.DevUtilities;
 using ScheduleOne.UI.Phone.ProductManagerApp;
 using ScheduleOne.Product;
 using HarmonyLib;
-[assembly: MelonInfo(typeof(SilkRoad.Plugin), "SilkRoad", "1.0.0", "Nourchene")]
+[assembly: MelonInfo(typeof(SilkRoad.Plugin), "SilkRoad", "1.0.0", "Akermi")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
 namespace SilkRoad
@@ -29,6 +29,8 @@ namespace SilkRoad
             MelonLogger.Msg("📦 Spawning Blackmarket Buyer NPC...");
 
             GameObject npcGO = new GameObject("Blackmarket Buyer");
+            npcGO.AddComponent<SilkRoad.BlackmarketBuyer>();
+
             GameObject.DontDestroyOnLoad(npcGO);
         }
 

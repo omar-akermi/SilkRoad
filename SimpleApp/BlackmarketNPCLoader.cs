@@ -23,6 +23,7 @@ namespace SilkRoad
 
             GameObject npcGO = new GameObject("Blackmarket Buyer");
             GameObject.DontDestroyOnLoad(npcGO);
+            npcGO.AddComponent<BlackmarketBuyer>();
 
             MelonLoader.MelonLogger.Msg("✅ Blackmarket Buyer NPC spawned and hooked");
         }
