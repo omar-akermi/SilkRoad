@@ -1,201 +1,159 @@
-﻿using ScheduleOne.Product;
-using UnityEngine;
-using UnityEngine.Events;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using MelonLoader;
 using ScheduleOne.DevUtilities;
 using ScheduleOne.Economy;
-using ScheduleOne.ItemFramework;
-using ScheduleOne.PlayerScripts;
-using ScheduleOne.Quests;
-using UnityEngine.UI;
-using System;
-using MelonLoader;
 using ScheduleOne.GameTime;
-using Harmony;
-using ScheduleOne.Map;
-using ScheduleOne.UI;
-using System.Collections;
+using ScheduleOne.ItemFramework;
+using ScheduleOne.Persistence.Datas;
+using ScheduleOne.PlayerScripts;
+using ScheduleOne.Product;
+using ScheduleOne.Quests;
+using ScheduleOneEnhanced.API;
+using ScheduleOneEnhanced.API.Quests;
+using ScheduleOneEnhanced.Mods.BulkBuyer;
+using UnityEngine;
+using static UnityEngine.InputSystem.LowLevel.InputStateHistory;
+using Random = UnityEngine.Random;
 
-namespace SilkRoad
+
+namespace SilkRoad.Quests
 {
-    public class QuestDelivery : Quest
+    public class QuestDelivery : SOEQuest
     {
-        private DeadDrop deliverDrop;
-        private DeadDrop rewardDrop;
-        private QuestEntry deliveryEntry;
-        private QuestEntry rewardEntry;
 
-        private ProductDefinition product;
-        private int amount;
-        private int reward;
-        private bool deliveryCompleted = false; // ✅ flag to track delivery status
-        public UnityEvent onActiveState = new UnityEvent();
-        public UnityEvent onComplete = new UnityEvent();
-        public UnityEvent onInitialComplete = new UnityEvent();
-        public UnityEvent onQuestBegin = new UnityEvent();
-        public UnityEvent<EQuestState> onQuestEnd = new UnityEvent<EQuestState>();
-        public UnityEvent<bool> onTrackChange = new UnityEvent<bool>();
-
-        public bool TrackOnBegin = true;
-        public bool AutoCompleteOnAllEntriesComplete = true;
-
-
-        public void Init(ProductDefinition productDef, int amount, int reward)
+        [Serializable]
+        public class DeliverySaveData : SaveData
         {
-            MelonLogger.Msg("🚀 QuestDelivery.Init() called");
-            MelonLogger.Msg($"📦 Product: {productDef?.Name ?? "NULL"}, Amount: {amount}, Reward: ${reward}");
-
-            this.product = productDef;
-            this.amount = amount;
-            this.reward = reward;
-            this.autoInitialize = false;
-            this.IsTracked = true;
-            this.title = $"{productDef.Name} Delivery";
-            this.Description = $"Deliver {amount}x {productDef.Name} bricks to the stash.";
-            this.Expires = true;
-            this.Subtitle = $"\n<color=#AAAAAA><size=12>{this.Description}</size></color>";
-
-            MelonLogger.Msg("⏳ Setting expiry (2 in-game days)");
-            GameDateTime expiry = NetworkSingleton<TimeManager>.Instance.GetDateTime().AddMins(2880);
-            this.ConfigureExpiry(true, expiry);
-
-            // Dead drop targets
-            if (DeadDrop.DeadDrops == null || DeadDrop.DeadDrops.Count <= 5)
-            {
-                MelonLogger.Error("❌ DeadDrops list is missing or too short!");
-                return;
-            }
-
-            deliverDrop = DeadDrop.DeadDrops[5];
-            rewardDrop = DeadDrop.DeadDrops[5];
-            MelonLogger.Msg($"📍 Using drop point: {deliverDrop?.name}");
-
-            // Hook delivery events
-            if (deliverDrop?.Storage == null || rewardDrop?.Storage == null)
-            {
-                MelonLogger.Error("❌ Drop storage is null!");
-                return;
-            }
-
-            deliverDrop.Storage.onClosed.AddListener(HandleDelivery);
-            rewardDrop.Storage.onOpened.AddListener(HandleReward);
-            MelonLogger.Msg("✅ Subscribed to drop storage events");
-
-            // Icon & POI
-            //MelonLogger.Msg("🎨 Creating IconPrefab & PoIPrefab");
-            this.IconPrefab = CreateIconPrefab().GetComponent<RectTransform>();
-            this.PoIPrefab = CreatePoIPrefab();
-            // Delivery Entry
-            MelonLogger.Msg("📄 Creating delivery quest entry");
-            GameObject deliverGO = new GameObject("DeliveryEntry");
-            deliverGO.transform.SetParent(transform);
-            deliveryEntry = deliverGO.AddComponent<QuestEntry>();
-            deliveryEntry.SetEntryTitle($"Deliver {amount}x {productDef.Name}");
-            deliveryEntry.PoILocation = deliverDrop.transform;
-
-            // Reward Entry
-            MelonLogger.Msg("📄 Creating reward quest entry");
-            GameObject rewardGO = new GameObject("RewardEntry");
-            rewardGO.transform.SetParent(transform);
-            rewardEntry = rewardGO.AddComponent<QuestEntry>();
-            rewardEntry.SetEntryTitle($"Collect ${reward} reward");
-            rewardEntry.PoILocation = rewardDrop.transform;
-
-            // Entries list
-            Entries.Clear(); // ⬅️ add this if not already there
-            Entries.Add(deliveryEntry);
-            Entries.Add(rewardEntry);
-            MelonLogger.Msg("✅ Added entries to quest");
-
-            // Register quest
-            Quest.Quests.Add(this);
-            Quest.ActiveQuests.Add(this);
-            MelonLogger.Msg("📝 Registered quest in Quest lists");
-
-            // Initialize data
-            try
-            {
-                string guid = Guid.NewGuid().ToString();
-                this.InitializeQuest(title, Description, Entries.Select(e => e.GetSaveData()).ToArray(), guid);
-                MelonLogger.Msg($"🧠 Initialized quest with GUID: {guid}");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"❌ Failed to initialize quest: {ex.Message}");
-            }
-
-            // Start
-            this.Begin(true);
-            MelonLogger.Msg("🔥 Quest.Begin(true) called");
+            public string productID;
+            public int quantity;
+            public int reward;
+            public GameDateTime expiryDateTime; // ✅ NEW
 
         }
 
 
+        public static int LoadCount = 0;
+        public static event Action OnAnyComplete;
+        [SaveableField("DeliveryData")]
+        public DeliverySaveData deliveryData;
 
-         private GameObject CreateIconPrefab()
-         {
-             GameObject icon = new GameObject("IconPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-             icon.transform.SetParent(transform);
-             Image img = icon.GetComponent<Image>();
-             var iconn = Plugin.LoadImage("SilkRoadIcon.png");
-             img.sprite = iconn;
-             return icon;
+        [SaveableField("DeadDrop")]
+        public DeadDropData deadDropData;
 
-         }
+        private QuestEntry DeliveryEntry => Entries[0];
+        private QuestEntry RewardEntry => Entries[1];
 
-
-
-        private GameObject CreatePoIPrefab()
+        public override void Awake()
         {
-            GameObject poiGO = new GameObject("POIPrefab");
-            poiGO.transform.SetParent(transform);
+            LoadCount++;
+            MelonLogger.Msg($"📦 QuestDelivery loaded (instance #{LoadCount})");
 
-            POI poi = poiGO.AddComponent<POI>();
-            poi.DefaultMainText = "Blackmarket Request";
+            soeQuestData = new SOEQuestData
+            {
+                questType = GetType().FullName
+            };
 
-            var field = HarmonyLib.AccessTools.Field(typeof(POI), "UIPrefab");
-            field.SetValue(poi, CreatePoIUIPrefab());
+            deliveryData ??= new DeliverySaveData();
+            deadDropData ??= new DeadDropData();
 
-            return poiGO;
+            AddEntry();
+            AddEntry();
+
+            base.Awake();
+            InitializeQuest(title, Description, Array.Empty<QuestEntryData>(), StaticGUID);
+        }
+        public QuestDelivery()
+        {
+            title = "Silkroad Delivery";
+        }
+        public override void Start()
+        {
+            Description = $"Deliver {deliveryData.quantity}x {deliveryData.productID} to the stash shown in the map.";
+            if (deliveryData == null || deadDropData == null)
+                throw new Exception("Quest data missing!");
+
+            DeliveryEntry.SetEntryTitle($"Deliver {deliveryData.quantity}x {deliveryData.productID} to the stash.");
+            RewardEntry.SetEntryTitle("Pick up your reward.");
+            
+            if (deadDropData.DeliveryDeadDrop != null)
+            {
+                DeliveryEntry.SetPoILocation(deadDropData.DeliveryDeadDrop.transform.position);
+                deadDropData.DeliveryDeadDrop.Storage.onClosed.AddListener(CheckDelivery);
+            }
+
+            if (deadDropData.CollectDeadDrop != null)
+            {
+                RewardEntry.SetPoILocation(deadDropData.CollectDeadDrop.transform.position);
+                deadDropData.CollectDeadDrop.Storage.onOpened.AddListener(GiveReward);
+            }
+
+            base.Start();
         }
 
-        private GameObject CreatePoIUIPrefab()
+        public void InitializeDelivery(string productID, int quantity, int reward)
         {
-            GameObject poiUI = new GameObject("PoIUIPrefab", typeof(RectTransform), typeof(CanvasRenderer), typeof(UnityEngine.EventSystems.EventTrigger), typeof(Button));
-            poiUI.transform.SetParent(transform);
 
-            GameObject label = new GameObject("MainLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
-            label.transform.SetParent(poiUI.transform);
+            int minsToComplete = 1440; // 1 in-game day = 1440 mins
 
-            GameObject icon = new GameObject("IconContainer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            icon.transform.SetParent(poiUI.transform);
-            icon.GetComponent<Image>().sprite = PlayerSingleton<ScheduleOne.UI.Phone.ContactsApp.ContactsApp>.Instance.AppIcon;
+            GameDateTime expiresAt = NetworkSingleton<TimeManager>.Instance.GetDateTime().AddMins(2880);
 
-            return poiUI;
+            deliveryData = new DeliverySaveData
+            {
+                productID = productID,
+                quantity = quantity,
+                reward = reward,
+                expiryDateTime = expiresAt
+
+            };
+            ConfigureExpiry(true, deliveryData.expiryDateTime);
+
+            DeadDrop delivery = DeadDrop.DeadDrops[Random.Range(0, DeadDrop.DeadDrops.Count)];
+            DeadDrop rewardDrop = DeadDrop.DeadDrops[Random.Range(0, DeadDrop.DeadDrops.Count)];
+
+            deadDropData = new DeadDropData
+            {
+                deliverDeadDropGUID = delivery.GUID.ToString(),
+                collectDeadDropGUID = rewardDrop.GUID.ToString()
+            };
         }
-        private void HandleDelivery()
+        private void CheckDelivery()
         {
-            if (deliveryCompleted) return;
 
-            MelonLogger.Msg("📥 HandleDelivery() triggered!");
-
-            if (deliverDrop == null || product == null)
+            if (deliveryData == null || deadDropData?.DeliveryDeadDrop == null)
                 return;
 
-            List<ItemSlot> matchingSlots = deliverDrop.Storage.ItemSlots
-                .Where(slot => slot.ItemInstance != null && slot.ItemInstance.Definition.name == product.name)
+            MelonLogger.Msg("📥 CheckDelivery() triggered");
+            MelonLogger.Msg($"🔍 Expecting: {deliveryData.quantity} bricks of productID: {deliveryData.productID}");
+
+            var storage = deadDropData.DeliveryDeadDrop.Storage;
+
+            List<ItemSlot> matchingSlots = storage.ItemSlots
+                .Where(slot => slot.ItemInstance is ProductItemInstance item &&
+                               item.PackagingID == "brick" &&
+                               item.Definition.name == deliveryData.productID)
                 .ToList();
 
-            int totalAmount = matchingSlots.Sum(slot => slot.Quantity);
-            if (totalAmount < amount)
+            foreach (var slot in matchingSlots)
             {
-                MelonLogger.Msg($"❌ Not enough {product.name}. Found {totalAmount}, need {amount}");
+                if (slot.ItemInstance is ProductItemInstance item)
+                {
+                    MelonLogger.Msg($"🧱 Slot with {slot.Quantity}x {item.Definition.ID} [{item.PackagingID}] found");
+                }
+            }
+
+            int total = matchingSlots.Sum(slot => slot.Quantity);
+            MelonLogger.Msg($"📦 Total matching bricks in stash: {total}");
+
+            if (total < deliveryData.quantity)
+            {
+                MelonLogger.Msg($"❌ Not enough bricks: found {total}, need {deliveryData.quantity}");
                 return;
             }
 
-            int toRemove = amount;
-            foreach (var slot in matchingSlots)
+            int toRemove = deliveryData.quantity;
+            foreach (ItemSlot slot in matchingSlots)
             {
                 int removeQty = Mathf.Min(toRemove, slot.Quantity);
                 slot.ChangeQuantity(-removeQty);
@@ -203,72 +161,59 @@ namespace SilkRoad
                 if (toRemove <= 0) break;
             }
 
-            MelonLogger.Msg($"✅ Delivered {amount}x {product.name}.");
-            deliveryCompleted = true;
+            MelonLogger.Msg($"✅ Delivered {deliveryData.quantity} bricks of {deliveryData.productID}");
 
-            // ✅ Just like QuestBulkOrder — mark first step as complete
-            if (deliveryEntry != null)
-                deliveryEntry.Complete();
-            this.Subtitle = $"\n<color=#AAAAAA><size=12>Reward ready: Collect ${reward} from the drop point.</size></color>";
-
-            if (rewardEntry != null)
-                rewardEntry.SetState(EQuestState.Active, true); // true = show toast popup or highlight
-
-            // Optional: Notify NPC
-            // BlackmarketBuyer.Instance?.NotifyDelivery(product.name);
+            DeliveryEntry.Complete();
+            RewardEntry.SetState(EQuestState.Active, true);
+            if (DeliveryEntry != null)
+                DeliveryEntry.Complete();
+            this.Description = $"\n<color=#AAAAAA><size=12>Reward ready: Collect it from the drop point.</size></color>";
         }
 
-
-        private void HandleReward()
+        private void GiveReward()
         {
-            if (!deliveryCompleted) return;
+            if (deliveryData == null || deadDropData?.CollectDeadDrop == null)
+                return;
 
-            if (!deliveryCompleted)
+            if (DeliveryEntry.State != EQuestState.Completed)
             {
                 MelonLogger.Warning("⛔ Tried to collect reward before completing delivery.");
                 return;
             }
 
-            if (rewardDrop == null) return;
+            var cash = (CashInstance)PlayerSingleton<PlayerInventory>.Instance.cashInstance.GetCopy();
+            cash.SetBalance(deliveryData.reward);
 
-            CashInstance cash = (CashInstance)PlayerSingleton<PlayerInventory>.Instance.cashInstance.GetCopy();
-            cash.SetBalance(reward);
+            if (!deadDropData.CollectDeadDrop.Storage.CanItemFit(cash))
+                return;
 
-            if (rewardDrop.Storage.CanItemFit(cash))
+            deadDropData.CollectDeadDrop.Storage.InsertItem(cash);
+            RewardEntry.Complete();
+            
+            MelonLogger.Msg($"💰 Reward of ${deliveryData.reward} inserted into reward stash.");
+            MelonLogger.Msg("🏁 Quest complete!");
+            
+            MelonLogger.Msg("🏁 Triggering onComplete event");
+            onComplete?.Invoke(); // trigger event (used in UI for NPCs, messages, etc.)
+            OnAnyComplete?.Invoke(); // ✅ NEW
+            Complete(); // mark quest fully done
+            Quest.Quests.Remove(this);
+            Quest.ActiveQuests.Remove(this);
+
+            // Optional: destroy HUD UI
+            var huds = GameObject.FindObjectsOfType<ScheduleOne.UI.QuestHUDUI>();
+            foreach (var hud in huds)
             {
-                rewardDrop.Storage.InsertItem(cash);
-                deliveryCompleted = true;
-
-                rewardEntry?.Complete();
-                deliveryEntry?.Complete(); // just in case
-                onComplete?.Invoke();
-
-                MelonLogger.Msg($"💰 Inserted ${reward} into reward stash.");
-                MelonLogger.Msg("🏁 Reward collected. Quest complete!");
-
-                Complete(); // ✅ properly ends quest
-                Quest.ActiveQuests.Remove(this);
-                // ✅ Destroy HUD if it exists
-                var huds = GameObject.FindObjectsOfType<ScheduleOne.UI.QuestHUDUI>();
-                foreach (var hud in huds)
+                if (hud != null && hud.Quest == this)
                 {
-                    if (hud != null && hud.Quest == this)
-                    {
-                        GameObject.Destroy(hud.gameObject);
-                        MelonLogger.Msg("🗑️ Destroyed QuestHUD UI for completed quest.");
-                        break;
-                    }
+                    GameObject.Destroy(hud.gameObject);
+                    MelonLogger.Msg("🗑️ Destroyed QuestHUD UI for completed quest.");
+                    break;
                 }
-
-                Destroy(gameObject); // ✅ destroy to prevent reactivation
             }
-        }
 
-
-        public override void Start()
-        {
-            base.Start();
-            Begin(); // Must call Begin() here like in BulkOrder
+            GameObject.Destroy(this.gameObject); // ✅ clean up quest instance*/
         }
     }
+
 }

@@ -6,7 +6,7 @@ using ScheduleOne.UI;
 using MelonLoader;
 
 
-namespace SilkRoad
+namespace SilkRoad.Quests
 {
     public class SilkRoadApp : App<SilkRoadApp>
     {

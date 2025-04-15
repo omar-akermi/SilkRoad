@@ -10,6 +10,7 @@ using ScheduleOne.Variables;
 using ScheduleOne.UI.Phone.ContactsApp;
 using ScheduleOne.GameTime;
 using ScheduleOne.DevUtilities;
+using SilkRoad.Quests;
 
 
 namespace SilkRoad
@@ -49,85 +50,8 @@ namespace SilkRoad
             this.ID = "npc_blackmarket_buyer";
         }
 
-        public override void Awake()
-        {
-            // Hook into day pass
-            NetworkSingleton<TimeManager>.Instance.onDayPass += SendRandomRequest;
 
-            base.Awake();
-        }
 
-        private void SendRandomRequest()
-        {
-            if (_pendingOrder || ProductManager.DiscoveredProducts.Count == 0)
-                return;
 
-            _pendingProduct = ProductManager.DiscoveredProducts[UnityEngine.Random.Range(0, ProductManager.DiscoveredProducts.Count)];
-            _pendingAmount = UnityEngine.Random.Range(5, 15); // Bricks
-            _pendingReward = Mathf.RoundToInt(_pendingProduct.Price * 20 * _pendingAmount);
-
-            string formattedText = RandomTexts[UnityEngine.Random.Range(0, RandomTexts.Length)]
-                .Replace("{product}", $"<color=#33FF99>{_pendingProduct.Name}</color>")
-                .Replace("{amount}", _pendingAmount.ToString())
-                .Replace("{price}", $"<color=#00FF00>${_pendingReward}</color>");
-
-            base.SendTextMessage(formattedText);
-            _pendingOrder = true;
-
-            // Prepare response options
-            MSGConversation.ClearResponses(false);
-            MSGConversation.ShowResponses(new List<Response>
-            {
-                new Response
-                {
-                    label = "ACCEPT",
-                    text = AcceptReplies[UnityEngine.Random.Range(0, AcceptReplies.Length)],
-                    callback = AcceptOrder
-                },
-                new Response
-                {
-                    label = "DENY",
-                    text = DenyReplies[UnityEngine.Random.Range(0, DenyReplies.Length)],
-                    callback = DenyOrder
-                }
-            }, 1f, true);
-        }
-
-        private void DenyOrder()
-        {
-            _pendingOrder = false;
-            _pendingProduct = null;
-            _pendingAmount = 0;
-            _pendingReward = 0;
-
-            base.SendTextMessage("Aight, maybe next time.");
-        }
-
-        private void AcceptOrder()
-        {
-            if (_pendingProduct == null)
-            {
-                base.SendTextMessage("Something went wrong. No product assigned.");
-                return;
-            }
-
-            base.SendTextMessage("Good. Watch the stash.");
-            SpawnDeliveryQuest(_pendingProduct, _pendingAmount, _pendingReward);
-            _pendingOrder = false;
-        }
-
-        private void SpawnDeliveryQuest(ProductDefinition product, int amount, int reward)
-        {
-            GameObject questGO = new GameObject("SilkRoad_Quest_" + product.name);
-            var quest = questGO.AddComponent<QuestDelivery>();
-            quest.Init(product, amount, reward);
-
-            // Hook onComplete to auto-destroy and log
-            quest.onComplete.AddListener(() =>
-            {
-                MelonLoader.MelonLogger.Msg($"✅ Quest for {product.name} complete. Cleaning up.");
-                GameObject.Destroy(questGO);
-            });
-        }
     }
 }

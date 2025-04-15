@@ -7,6 +7,7 @@ using ScheduleOne.PlayerScripts;
 using ScheduleOne.Product;
 using ScheduleOne.Quests;
 using ScheduleOne.UI.Phone;
+using SilkRoad.Quests;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -15,13 +16,13 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace SilkRoad
+namespace SilkRoad.Quests
 {
     public class SilkRoadAppUI : MonoBehaviour
     {
         private List<QuestData> quests = new List<QuestData>();
         private QuestData selectedQuest;
-        private QuestData activeQuest;
+        public QuestData activeQuest;
         private Coroutine deliveryCoroutine;
 
         public RectTransform questListContainer;
@@ -33,9 +34,12 @@ namespace SilkRoad
         public Text questReward;
         private static QuestData lastActiveQuest;
         public Text deliveryStatus; // declare at top
+        public static SilkRoadAppUI Instance;
 
         public void BuildUI(Transform root)
         {
+            Instance = this;
+
             MelonLogger.Msg("📱 Building Silk Road UI...");
 
             GameObject bg = UIFactory.Panel("SilkRoad_Background", root, Color.black, fullAnchor: true);
@@ -116,7 +120,21 @@ namespace SilkRoad
             LoadQuests();
         }
 
+        public void HandleQuestCompleteFromPlugin()
+        {
+            MelonLogger.Msg("🧼 HandleQuestCompleteFromPlugin() called from Plugin.cs");
 
+            activeQuest = null;
+
+            if (acceptButton != null)
+            {
+                acceptButton.interactable = true;
+                acceptButton.GetComponentInChildren<Text>().text = "Accept Delivery";
+            }
+
+            if (deliveryStatus != null)
+                deliveryStatus.text = "";
+        }
         public void LoadQuests()
         {
             MelonLogger.Msg("🧠 LoadQuests() with 4 random products");
@@ -133,7 +151,7 @@ namespace SilkRoad
 
             foreach (var def in shuffled)
             {
-                int bricks = rng.Next(1, 10); // Between 1 and 9
+                int bricks = rng.Next(10, 60); // Between 1 and 9
                 int baseReward = Mathf.RoundToInt(def.Price * 25f * bricks);
                 int bonus = UnityEngine.Random.Range(100, 301) * bricks; // +100 to +300 per brick
                 int reward = baseReward + bonus;
@@ -385,10 +403,12 @@ namespace SilkRoad
         private void AcceptQuest(QuestData quest)
         {
             MelonLogger.Msg($"🚀 AcceptQuest called for: {quest.Title}");
+            MelonLogger.Msg("🚦 AcceptQuest() entered");
 
-            if (activeQuest != null)
+            if (activeQuest != null || IsDeliveryQuestAlreadyLoaded())
             {
-                MelonLogger.Warning("⚠️ You already have an active delivery.");
+                MelonLogger.Warning("⚠️ A delivery quest is already running or has been loaded from save.");
+                acceptButton.interactable = false;
                 return;
             }
 
@@ -401,52 +421,47 @@ namespace SilkRoad
                 return;
             }
 
-            // Spawn quest GameObject
-            GameObject questGO = new GameObject("DeliveryQuest_" + quest.ProductID);
-            QuestDelivery questDelivery = questGO.AddComponent<QuestDelivery>();
-            questDelivery.Init(product, (int)quest.AmountRequired, quest.Reward);
+            // ✅ Find or create QuestDelivery
+            QuestDelivery questDelivery = Quest.Quests.FirstOrDefault(q => q is QuestDelivery) as QuestDelivery;
+            if (questDelivery == null)
+            {
+                GameObject questGO = new GameObject("DeliveryQuest_" + quest.ProductID);
+                questDelivery = questGO.AddComponent<QuestDelivery>();
+                questDelivery.InitializeDelivery(product.name, (int)quest.AmountRequired, quest.Reward);
+                MelonLogger.Msg("🆕 Spawned new QuestDelivery manually.");
+            }
+            else
+            {
+                MelonLogger.Msg("🔁 Found existing QuestDelivery — will listen to it.");
+            }
 
             activeQuest = quest;
-            lastActiveQuest = quest; // 💾 persist across UI reloads
+            lastActiveQuest = quest;
 
-            // ✅ Update UI to reflect active quest
             acceptButton.interactable = false;
             acceptButton.GetComponentInChildren<Text>().text = "Delivery Active";
 
-
             // ✅ Hook on completion
-            questDelivery.onComplete.AddListener(() =>
+            QuestDelivery.OnAnyComplete += () =>
             {
-                MelonLogger.Msg("✅ Quest marked as complete. Resetting activeQuest.");
+                MelonLogger.Msg("✅ Static QuestDelivery.OnAnyComplete triggered — resetting activeQuest.");
                 activeQuest = null;
-                GameObject.Destroy(questGO);
 
-                // ✅ Reset UI
                 acceptButton.interactable = true;
                 acceptButton.GetComponentInChildren<Text>().text = "Accept Delivery";
-                deliveryStatus.text = ""; // Clear delivery active label
+                deliveryStatus.text = "";
 
-                // ✅ Send final message from Blackmarket Buyer
                 var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
                 if (npc != null)
-                {
-                    MelonLogger.Msg("📱 Quest complete — sending final NPC message.");
                     npc.SendTextMessage("Yo, got the package. Payment’s wired. Good job.");
-                }
-                else
-                {
-                    MelonLogger.Warning("⚠️ Blackmarket Buyer NPC not found. No final message sent.");
-                }
-            });
-
-            acceptButton.interactable = false;
+            };
 
             // ✅ Send message from Blackmarket Buyer NPC
-            var npc = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
-            if (npc != null)
-            {        
+            var buyer = NPCManager.NPCRegistry.Find(n => n.ID == "npc_blackmarket_buyer");
+            if (buyer != null)
+            {
                 MelonLogger.Msg("📱 Found Blackmarket Buyer NPC, sending quest text...");
-                npc.SendTextMessage(
+                buyer.SendTextMessage(
                     $"Yo, I’m expecting <color=#FF0004>{quest.AmountRequired}x</color> bricks of <color=#34AD33>{product.Name}</color>. " +
                     $"Drop it off at the Skatepark stash. Reward: <color=#C9C843>${quest.Reward}</color>.");
             }
@@ -459,32 +474,14 @@ namespace SilkRoad
         }
 
 
-
-
-        private Vector3 dropOffLocation = new Vector3(-18.9826f, -4.035f, 173.6407f);
-
-        private IEnumerator CheckDelivery(QuestData quest)
+        private bool IsDeliveryQuestAlreadyLoaded()
         {
-            while (activeQuest != null)
-            {
-                float distance = Vector3.Distance(PlayerSingleton<PlayerMovement>.Instance.transform.position, dropOffLocation);
-                if (distance < 4f)
-                {
-                    uint count = PlayerSingleton<PlayerInventory>.Instance.GetAmountOfItem(quest.ProductID);
-                    if (count >= quest.AmountRequired)
-                    {
-                        PlayerSingleton<PlayerInventory>.Instance.RemoveAmountOfItem(quest.ProductID, quest.AmountRequired);
-                        NetworkSingleton<MoneyManager>.Instance.ChangeCashBalance(quest.Reward, true, true);
-                        MelonLogger.Msg($"✅ Delivered {quest.AmountRequired}x {quest.ProductID} — earned ${quest.Reward}!");
-
-                        activeQuest = null;
-                        yield break;
-                    }
-                }
-
-                yield return new WaitForSeconds(1.5f);
-            }
+            return Quest.Quests.Any(q => q is QuestDelivery);
         }
+
+
+
+
 
     }
 }

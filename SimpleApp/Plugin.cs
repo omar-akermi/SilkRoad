@@ -8,6 +8,12 @@ using ScheduleOne.DevUtilities;
 using ScheduleOne.UI.Phone.ProductManagerApp;
 using ScheduleOne.Product;
 using HarmonyLib;
+using ScheduleOneEnhanced.API.Quests;
+using ScheduleOne.Quests;
+using System.Linq;
+using SilkRoad.Quests;
+[assembly: HarmonyDontPatchAll]
+
 [assembly: MelonInfo(typeof(SilkRoad.Plugin), "SilkRoad", "1.0.0", "Akermi")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 
@@ -18,23 +24,58 @@ namespace SilkRoad
         public override void OnInitializeMelon()
         {
             MelonLogger.Msg("🚚 Silk Road mod loaded!");
-            HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.silkroad.npc");
-            harmony.PatchAll(typeof(SilkRoad.BlackmarketNPCLoader).Assembly);
         }
+
         public override void OnSceneWasInitialized(int buildIndex, string sceneName)
         {
             if (sceneName != "Main") return;
-            MelonCoroutines.Start(InitSilkRoadApp());
+
+            HarmonyLib.Harmony harmony = new HarmonyLib.Harmony("com.silkroad.npc");
+            harmony.PatchAll(typeof(QuestManagerPatch).Assembly);
 
             MelonLogger.Msg("📦 Spawning Blackmarket Buyer NPC...");
 
             GameObject npcGO = new GameObject("Blackmarket Buyer");
             npcGO.AddComponent<SilkRoad.BlackmarketBuyer>();
-
             GameObject.DontDestroyOnLoad(npcGO);
+            MelonLogger.Msg($"🧪 Is QuestDelivery already loaded? {IsQuestDeliveryAlreadyLoaded()}");
+
+            if (!IsQuestDeliveryAlreadyLoaded())
+                MelonCoroutines.Start(WaitForQuestsThenInitApp());
+            else
+                MelonLogger.Msg("⚠️ QuestDelivery already loaded from save — skipping SilkRoad app spawn.");
+            QuestDelivery.OnAnyComplete += () =>
+            {
+                MelonLogger.Msg("📣 Global QuestDelivery.OnAnyComplete triggered from Plugin.cs");
+
+                if (SilkRoadAppUI.Instance != null)
+                {
+                    SilkRoadAppUI.Instance.HandleQuestCompleteFromPlugin();
+                }
+                else
+                {
+                    MelonLogger.Warning("⚠️ SilkRoadAppUI.Instance was null — could not update UI.");
+                }
+            };
+        }
+        private IEnumerator WaitForQuestsThenInitApp()
+        {
+            // Wait until QuestManager has loaded all quests
+            while (Quest.Quests.Count == 0)
+                yield return null;
+
+            MelonLogger.Msg($"✅ Quests loaded. Found {Quest.Quests.Count} quests.");
+
+            if (!IsQuestDeliveryAlreadyLoaded())
+                MelonCoroutines.Start(InitSilkRoadApp());
+            else
+                MelonLogger.Msg("⚠️ QuestDelivery already loaded from save — skipping SilkRoad app spawn.");
         }
 
-        
+        private static bool IsQuestDeliveryAlreadyLoaded()
+        {
+            return Quest.Quests.Any(q => q is QuestDelivery);
+        }
 
         private IEnumerator InitSilkRoadApp()
         {
@@ -43,14 +84,13 @@ namespace SilkRoad
 
             var appsCanvas = PlayerSingleton<AppsCanvas>.Instance;
             Transform parentCanvas = appsCanvas.canvas.transform;
-            foreach (Transform child in PlayerSingleton<AppsCanvas>.Instance.canvas.transform)
+
+            foreach (Transform child in parentCanvas)
             {
                 if (child.name == "SilkRoadApp" && child.GetComponent<SilkRoadApp>() == null)
-                {
-                    GameObject.Destroy(child.gameObject); // Destroy old, non-cloned versions
-                }
+                    GameObject.Destroy(child.gameObject);
             }
-            // Remove 8th icon (index 7) on phone open
+
             var iconGrid = GameObject.Find("Player_Local/CameraContainer/Camera/OverlayCamera/GameplayMenu/Phone/phone/HomeScreen/AppIcons");
             if (iconGrid != null && iconGrid.transform.childCount > 7)
             {
@@ -61,6 +101,7 @@ namespace SilkRoad
                     MelonLogger.Msg("🗑️ Removed 8th icon (index 7)");
                 }
             }
+
             foreach (Transform child in parentCanvas)
             {
                 if (child.name.Contains("ProductManagerApp") && child.GetComponent<ProductManagerApp>() == null)
@@ -69,7 +110,7 @@ namespace SilkRoad
                     MelonLogger.Msg("🗑️ Removed dangling ProductManagerApp clone.");
                 }
             }
-            // 1. Clone an existing app (ProductManagerApp)
+
             Transform originalApp = parentCanvas.Find("ProductManagerApp");
             if (originalApp == null)
             {
@@ -77,17 +118,14 @@ namespace SilkRoad
                 yield break;
             }
 
-            // 1. Clone
             GameObject clonedApp = GameObject.Instantiate(originalApp.gameObject, parentCanvas);
             clonedApp.name = "SilkRoadApp";
             clonedApp.SetActive(false);
 
-            // 2. REMOVE the original ProductManagerApp behavior
             var oldApp = clonedApp.GetComponent<ProductManagerApp>();
             if (oldApp != null)
                 GameObject.Destroy(oldApp);
 
-            // 2. Clear its UI and inject our own
             Transform container = clonedApp.transform.Find("Container");
             if (container != null)
             {
@@ -95,13 +133,11 @@ namespace SilkRoad
                     GameObject.Destroy(child.gameObject);
             }
 
-            // 3. Attach your custom logic and UI
             var silkApp = clonedApp.AddComponent<SilkRoadApp>();
             silkApp.appContainer = container.GetComponent<RectTransform>();
 
             MelonLogger.Msg("✅ SilkRoad app attached to AppsCanvas.");
 
-            // 4. Add the icon to HomeScreen
             SetupSilkRoadIcon(clonedApp);
         }
 
@@ -117,15 +153,13 @@ namespace SilkRoad
                 return;
             }
 
-            // Clean up ALL old Silk icons (name and label check)
             foreach (Transform icon in iconGrid.transform)
             {
                 var label = icon.Find("Label")?.GetComponent<Text>()?.text;
-                if (icon.name == "SilkRoadIcon" || label == "Silk")
+                if (icon.name == "SilkRoadIcon" || label == "Silkroad")
                     GameObject.Destroy(icon.gameObject);
             }
 
-            // Clean up Products clones (keep only the first one)
             bool foundFirstProducts = false;
             foreach (Transform icon in iconGrid.transform)
             {
@@ -142,12 +176,11 @@ namespace SilkRoad
                 }
             }
 
-            // Clone icon (based on icon index 6 as template)
             Transform existingIcon = iconGrid.transform.GetChild(6);
             GameObject newIcon = GameObject.Instantiate(existingIcon.gameObject, iconGrid.transform);
             newIcon.name = "SilkRoadIcon";
 
-            newIcon.transform.Find("Label").GetComponent<Text>().text = "Silk";
+            newIcon.transform.Find("Label").GetComponent<Text>().text = "Silkroad";
             if (iconSprite != null)
             {
                 var img = newIcon.transform.Find("Mask/Image").GetComponent<Image>();
@@ -158,11 +191,8 @@ namespace SilkRoad
             btn.onClick.RemoveAllListeners();
             btn.onClick.AddListener(() =>
             {
-                // 🔥 Remove *this* button’s GameObject (self-destroy)
                 GameObject.Destroy(btn.gameObject);
                 MelonLogger.Msg("🗑️ Removed original broken SilkRoad icon (self)");
-
-                // ✅ Open the app
                 appGO.SetActive(true);
             });
 
